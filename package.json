@@ -2,21 +2,8 @@
   "name": "aianswernow-site",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "firebase": "^12.9.0",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4"
-  },
-  "devDependencies": {
-    "@tailwindcss/vite": "^4.2.0",
-    "@vitejs/plugin-react": "^5.1.4",
-    "tailwindcss": "^4.2.0",
-    "vite": "^7.3.1"
+    "dev": "npx serve public -l 3000",
+    "build": "echo 'Static site - no build needed'"
   }
 }
