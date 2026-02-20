@@ -5,22 +5,25 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Answering Service 24/7 | Human-Like Voice</title>
-    <!-- Firebase SDK (compat version — non-module, loads synchronously) -->
+    <!-- Firebase SDK (compat version — only needed for verify.html reads/updates) -->
     <script src="https://www.gstatic.com/firebasejs/11.3.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.3.0/firebase-firestore-compat.js"></script>
-    <!-- Firebase DB wrapper — replaces Supabase client with Firestore SDK -->
+    <!-- Firebase DB wrapper — replaces Supabase client -->
     <script>
     (function() {
-      // Initialize Firebase
-      var app = firebase.initializeApp({
-        apiKey: "AIzaSyAJ8hLasKT3rGTcvMF0999nWZ_wRsbzWt4",
-        authDomain: "aianswernow-3c345.firebaseapp.com",
-        projectId: "aianswernow-3c345",
-        storageBucket: "aianswernow-3c345.firebasestorage.app",
-        messagingSenderId: "441518559053",
-        appId: "1:441518559053:web:1e2bc62517d77b9d53b104"
+      var PROJECT_ID = 'aianswernow-3c345';
+      var API_KEY = 'AIzaSyAJ8hLasKT3rGTcvMF0999nWZ_wRsbzWt4';
+      var FORMSUBMIT_OWNER_HASH = '9571eb5fe1f34a8362a41f1668ba7284';
+
+      // Initialize Firebase (needed for heartbeat/compat)
+      firebase.initializeApp({
+        apiKey: API_KEY,
+        authDomain: PROJECT_ID + '.firebaseapp.com',
+        projectId: PROJECT_ID,
+        storageBucket: PROJECT_ID + '.firebasestorage.app',
+        messagingSenderId: '441518559053',
+        appId: '1:441518559053:web:1e2bc62517d77b9d53b104'
       });
-      var db = firebase.firestore();
 
       // Generate a unique verification token
       function generateToken() {
@@ -30,30 +33,63 @@
         return token;
       }
 
+      // Write to Firestore using REST API (proven to work, avoids SDK issues)
+      function writeToFirestoreREST(collection, data) {
+        var fields = {};
+        for (var key in data) {
+          if (data.hasOwnProperty(key)) {
+            var val = data[key];
+            if (typeof val === 'string') fields[key] = { stringValue: val };
+            else if (typeof val === 'boolean') fields[key] = { booleanValue: val };
+            else if (typeof val === 'number') fields[key] = { integerValue: String(val) };
+            else if (val === null || val === undefined) fields[key] = { nullValue: null };
+            else fields[key] = { stringValue: String(val) };
+          }
+        }
+        // Add server timestamp
+        fields['created_at'] = { timestampValue: new Date().toISOString() };
+
+        var url = 'https://firestore.googleapis.com/v1/projects/' + PROJECT_ID +
+                  '/databases/(default)/documents/' + collection + '?key=' + API_KEY;
+
+        return fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields: fields })
+        })
+        .then(function(r) {
+          if (!r.ok) return r.json().then(function(err) { throw new Error(JSON.stringify(err)); });
+          return r.json();
+        })
+        .then(function(doc) {
+          // Extract doc ID from name: "projects/.../documents/demo_requests/DOC_ID"
+          var parts = doc.name.split('/');
+          var docId = parts[parts.length - 1];
+          console.log('[Firebase] REST write success, doc ID:', docId);
+          return docId;
+        });
+      }
+
       // Send confirmation email to the user via FormSubmit
       function sendConfirmationEmail(email, name, token) {
         var verifyUrl = 'https://aianswernow.com/verify.html?token=' + token;
         var emailData = new FormData();
-        emailData.append('email', email);
+        emailData.append('email', FORMSUBMIT_OWNER_HASH);
         emailData.append('_subject', 'Confirm Your Demo Request - AI Answer Now');
-        emailData.append('_template', 'box');
+        emailData.append('_template', 'table');
         emailData.append('_captcha', 'false');
         emailData.append('_replyto', 'demo@aianswernow.com');
-        emailData.append('message',
-          'Hi ' + (name || 'there') + ',\n\n' +
-          'Thank you for requesting a free demo of AI Answer Now!\n\n' +
-          'Please confirm your email by clicking the link below:\n\n' +
-          verifyUrl + '\n\n' +
-          'This link will expire in 24 hours.\n\n' +
-          'Best regards,\nAI Answer Now Team'
-        );
-        return fetch('https://formsubmit.co/ajax/' + email, {
+        emailData.append('To', email);
+        emailData.append('Name', name || 'there');
+        emailData.append('Confirmation Link', verifyUrl);
+        emailData.append('Message', 'Please click the link above to confirm your demo request. This link expires in 24 hours.');
+        return fetch('https://formsubmit.co/ajax/' + FORMSUBMIT_OWNER_HASH, {
           method: 'POST',
           body: emailData
         }).then(function(r) {
-          console.log('[Firebase] Confirmation email sent to:', email, 'status:', r.status);
+          console.log('[Firebase] Confirmation notification sent, status:', r.status);
         }).catch(function(e) {
-          console.error('[Firebase] Confirmation email failed:', e.message);
+          console.error('[Firebase] Confirmation notification failed:', e.message);
         });
       }
 
@@ -77,7 +113,7 @@
         document.body.appendChild(overlay);
       }
 
-      // Supabase-compatible wrapper that writes to Firestore via SDK
+      // Supabase-compatible wrapper using Firestore REST API
       window.__firebaseDB = {
         from: function(table) {
           return {
@@ -89,24 +125,23 @@
 
                   // Generate verification token
                   var token = generateToken();
-                  var dataWithVerification = Object.assign({}, row, {
-                    created_at: firebase.firestore.FieldValue.serverTimestamp(),
+                  var dataToWrite = Object.assign({}, row, {
                     status: 'pending_verification',
                     verification_token: token,
                     expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
                   });
 
-                  return db.collection(table).add(dataWithVerification)
-                  .then(function(docRef) {
-                    console.log('[Firebase] Saved to Firestore (pending), doc ID:', docRef.id);
-                    // Send confirmation email to the user
-                    sendConfirmationEmail(row.email, row.contact_name, token);
+                  return writeToFirestoreREST(table, dataToWrite)
+                  .then(function(docId) {
+                    console.log('[Firebase] Saved to Firestore (pending), doc ID:', docId);
+                    // Send notification to owner with confirmation details (fire and forget)
+                    try { sendConfirmationEmail(row.email, row.contact_name, token); } catch(e) { console.error(e); }
                     // Show "check your email" overlay
                     setTimeout(function() { showCheckEmailOverlay(row.email || ''); }, 500);
-                    return { data: [Object.assign({ id: docRef.id }, row)], error: null };
+                    return { data: [Object.assign({ id: docId }, row)], error: null };
                   })
                   .catch(function(e) {
-                    console.error('[Firebase] Write failed:', e.message);
+                    console.error('[Firebase] Write FAILED:', e.message);
                     return { data: null, error: { message: e.message } };
                   });
                 }
@@ -120,13 +155,12 @@
         functions: {
           invoke: function(name, opts) {
             console.log('[Firebase] Edge function call (no-op):', name);
-            // Don't send owner notification here — it will be sent after email confirmation
             return Promise.resolve({ data: { success: true }, error: null });
           }
         }
       };
 
-      console.log('[Firebase] Firestore SDK wrapper ready');
+      console.log('[Firebase] Firestore REST wrapper ready');
     })();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@vapi-ai/web@latest"></script>
