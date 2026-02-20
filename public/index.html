@@ -53,7 +53,33 @@
         },
         functions: {
           invoke: function(name, opts) {
-            console.log('[Firebase] Edge function call (no-op):', name);
+            console.log('[Firebase] Edge function call:', name);
+            // Send email notification when demo request is submitted
+            if (name === 'send-demo-request-email' && opts && opts.body && opts.body.submissionData) {
+              var d = opts.body.submissionData;
+              var emailData = new FormData();
+              emailData.append('email', '9571eb5fe1f34a8362a41f1668ba7284');
+              emailData.append('_subject', 'New Demo Request: ' + (d.business_name || 'Unknown'));
+              emailData.append('_template', 'table');
+              emailData.append('_captcha', 'false');
+              emailData.append('Business Name', d.business_name || '');
+              emailData.append('Contact Name', d.contact_name || '');
+              emailData.append('Email', d.email || '');
+              emailData.append('Phone', d.phone || '');
+              emailData.append('Owner', d.is_owner || '');
+              emailData.append('Voice Preference', d.voice_preference || '');
+              emailData.append('Industry', d.industry || '');
+              emailData.append('Price List Link', d.price_list_link || '');
+              emailData.append('Price List Text', d.price_list_text || '');
+              fetch('https://formsubmit.co/ajax/9571eb5fe1f34a8362a41f1668ba7284', {
+                method: 'POST',
+                body: emailData
+              }).then(function(r) {
+                console.log('[Firebase] Email notification sent, status:', r.status);
+              }).catch(function(e) {
+                console.error('[Firebase] Email notification failed:', e.message);
+              });
+            }
             return Promise.resolve({ data: { success: true }, error: null });
           }
         }
