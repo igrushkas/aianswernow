@@ -1,7 +1,6 @@
 /**
- * Firebase Shim - Intercepts Supabase fetch calls and redirects to Firebase Firestore
- * The original site uses Supabase (free tier that pauses after inactivity).
- * This shim intercepts all Supabase REST API calls and writes to Firebase instead.
+ * Firebase Shim — Handles Supabase requests redirected by the sync fetch intercept.
+ * Loads Firebase SDK, writes to Firestore, and processes any queued requests.
  */
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.3.0/firebase-app.js'
 import { getFirestore, collection, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.3.0/firebase-firestore.js'
@@ -18,30 +17,38 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig)
 const db = getFirestore(app)
 
-// Intercept all fetch calls to Supabase and redirect to Firebase
-const originalFetch = window.fetch
-window.fetch = async function(url, options) {
+/**
+ * Handle an intercepted Supabase REST API request by writing to Firestore.
+ * Returns a Response object that mimics Supabase's response format.
+ */
+async function handleSupabaseRequest(url, options) {
   const urlStr = typeof url === 'string' ? url : url?.url || ''
 
-  // Intercept Supabase REST API insert calls (demo_requests table)
-  if (urlStr.includes('supabase.co/rest/v1/demo_requests')) {
-    console.log('[Firebase] Intercepting Supabase REST call → writing to Firebase')
+  // Extract table name from URL: .../rest/v1/{tableName}?...
+  const match = urlStr.match(/\/rest\/v1\/([^?]+)/)
+  const tableName = match ? match[1] : 'demo_requests'
+
+  const method = options?.method?.toUpperCase() || 'GET'
+
+  // Only handle POST (insert) and HEAD/GET (heartbeat) requests
+  if (method === 'POST') {
     try {
       const body = JSON.parse(options?.body || '[]')
       const row = Array.isArray(body) ? body[0] : body
 
-      const docRef = await addDoc(collection(db, 'demo_requests'), {
+      const docRef = await addDoc(collection(db, tableName), {
         ...row,
         created_at: serverTimestamp()
       })
 
-      console.log('[Firebase] Saved to Firestore, doc ID:', docRef.id)
+      console.log('[Firebase] Saved to Firestore:', tableName, '→', docRef.id)
+
       return new Response(JSON.stringify([{ id: docRef.id, ...row }]), {
         status: 201,
         headers: { 'Content-Type': 'application/json' }
       })
     } catch (err) {
-      console.error('[Firebase] Write failed:', err)
+      console.error('[Firebase] Firestore write failed:', err)
       return new Response(JSON.stringify({ message: err.message }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
@@ -49,17 +56,26 @@ window.fetch = async function(url, options) {
     }
   }
 
-  // Intercept Supabase Edge Function calls (email notifications)
-  if (urlStr.includes('supabase.co/functions/v1/')) {
-    console.log('[Firebase] Intercepting Supabase Edge Function (no-op)')
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    })
-  }
-
-  // Pass through all other requests unchanged
-  return originalFetch.apply(this, arguments)
+  // For GET/HEAD requests (heartbeat, select), return empty success
+  return new Response(JSON.stringify([]), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' }
+  })
 }
 
-console.log('[Firebase] Shim loaded — Supabase calls will be redirected to Firestore')
+// Register as the handler for future intercepted requests
+window.__fbHandler = handleSupabaseRequest
+
+// Process any requests that were queued before Firebase loaded
+if (window.__fbQueue && window.__fbQueue.length > 0) {
+  console.log('[Firebase] Processing', window.__fbQueue.length, 'queued request(s)')
+  const queue = [...window.__fbQueue]
+  window.__fbQueue = []
+  for (const item of queue) {
+    handleSupabaseRequest(item.url, item.options)
+      .then(item.resolve)
+      .catch(item.reject)
+  }
+}
+
+console.log('[Firebase] Shim ready — all Supabase calls now go to Firestore')

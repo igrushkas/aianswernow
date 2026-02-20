@@ -5,8 +5,45 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Answering Service 24/7 | Human-Like Voice</title>
+    <!-- STEP 1: Synchronous fetch intercept — MUST run before any modules load -->
+    <script>
+    (function() {
+      var originalFetch = window.fetch;
+      window.__fbQueue = [];
+      window.__fbHandler = null;
+
+      window.fetch = function(url, options) {
+        var urlStr = typeof url === 'string' ? url : (url && url.url) || '';
+
+        // Intercept Supabase REST API calls (form submissions, heartbeats, etc.)
+        if (urlStr.indexOf('supabase.co/rest/v1/') !== -1) {
+          console.log('[Firebase] Intercepting Supabase REST call:', urlStr);
+          if (window.__fbHandler) {
+            return window.__fbHandler(url, options);
+          }
+          // Firebase not ready yet — queue the request
+          return new Promise(function(resolve, reject) {
+            window.__fbQueue.push({ url: url, options: options, resolve: resolve, reject: reject });
+          });
+        }
+
+        // Intercept Supabase Edge Function calls (email notifications)
+        if (urlStr.indexOf('supabase.co/functions/v1/') !== -1) {
+          console.log('[Firebase] Intercepting Supabase Edge Function (no-op)');
+          return Promise.resolve(new Response(JSON.stringify({ success: true }), {
+            status: 200, headers: { 'Content-Type': 'application/json' }
+          }));
+        }
+
+        // All other requests pass through unchanged
+        return originalFetch.apply(this, arguments);
+      };
+
+      console.log('[Firebase] Fetch intercept installed (sync)');
+    })();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/@vapi-ai/web@latest"></script>
-    <!-- Firebase shim - intercepts Supabase calls and redirects to Firebase -->
+    <!-- STEP 2: Firebase handler — loads async, processes queued requests -->
     <script type="module" src="/firebase-shim.js"></script>
     <!-- Original app bundle (unchanged) -->
     <script type="module" crossorigin src="/assets/index-49919655.js"></script>
