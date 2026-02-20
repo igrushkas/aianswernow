@@ -66,7 +66,8 @@
     (function() {
       var FORMSUBMIT_HASH = '9571eb5fe1f34a8362a41f1668ba7284';
       // HubSpot Private App token — will be set after user provides it
-      var HUBSPOT_TOKEN = '__HUBSPOT_TOKEN__';
+      // HubSpot integration via Cloudflare Worker proxy (token stays server-side)
+      var HUBSPOT_WORKER = 'https://aianswernow-hubspot.aianswernow.workers.dev';
 
       var container = document.getElementById('main');
 
@@ -132,10 +133,8 @@
             // Send owner notification email
             sendOwnerNotification(data);
 
-            // Create HubSpot contact + deal
-            if (HUBSPOT_TOKEN && HUBSPOT_TOKEN !== '__HUBSPOT_TOKEN__') {
-              createHubSpotContact(data);
-            }
+            // Create HubSpot contact + deal via worker proxy
+            createHubSpotContact(data);
 
             showSuccess(data.contact_name || data.business_name || '');
           });
@@ -170,54 +169,32 @@
       }
 
       function createHubSpotContact(d) {
-        // Create contact
-        fetch('https://api.hubapi.com/crm/v3/objects/contacts', {
+        fetch(HUBSPOT_WORKER, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + HUBSPOT_TOKEN
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            properties: {
+            action: 'create-contact-and-deal',
+            data: {
               email: d.email || '',
-              firstname: d.contact_name || '',
+              contact_name: d.contact_name || '',
               phone: d.phone || '',
-              company: d.business_name || '',
+              business_name: d.business_name || '',
               industry: d.industry || '',
-              hs_lead_status: 'NEW'
+              voice_preference: d.voice_preference || '',
+              is_owner: d.is_owner || ''
             }
           })
         })
         .then(function(r) { return r.json(); })
-        .then(function(contact) {
-          console.log('[HubSpot] Contact created:', contact.id);
-          // Create deal and associate with contact
-          return fetch('https://api.hubapi.com/crm/v3/objects/deals', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ' + HUBSPOT_TOKEN
-            },
-            body: JSON.stringify({
-              properties: {
-                dealname: (d.business_name || 'Unknown') + ' - Free Demo',
-                dealstage: 'appointmentscheduled',
-                pipeline: 'default',
-                description: 'Voice: ' + (d.voice_preference || 'N/A') + ' | Owner: ' + (d.is_owner || 'N/A') + ' | Industry: ' + (d.industry || 'N/A')
-              },
-              associations: [{
-                to: { id: contact.id },
-                types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 3 }]
-              }]
-            })
-          });
-        })
-        .then(function(r) { return r.json(); })
-        .then(function(deal) {
-          console.log('[HubSpot] Deal created:', deal.id);
+        .then(function(result) {
+          if (result.success) {
+            console.log('[HubSpot] Contact created:', result.contactId, 'Deal created:', result.dealId);
+          } else {
+            console.error('[HubSpot] Error:', result.error);
+          }
         })
         .catch(function(e) {
-          console.error('[HubSpot] Error:', e.message);
+          console.error('[HubSpot] Worker error:', e.message);
         });
       }
 
