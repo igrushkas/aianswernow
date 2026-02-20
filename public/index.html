@@ -72,41 +72,158 @@
 </head>
 <body>
     <div id="root"></div>
-    <!-- Inject "Try it for FREE" button under pricing heading -->
+    <!-- Inject "TRY IT FOR FREE" button + Monthly/Yearly toggle under pricing heading -->
     <script>
     (function() {
-      function injectFreeTrialButton() {
+      // Pricing data
+      var plans = [
+        { monthly: 299, yearly: Math.round(299 * 0.85) },
+        { monthly: 599, yearly: Math.round(599 * 0.85) },
+        { monthly: 799, yearly: Math.round(799 * 0.85) }
+      ];
+      var isYearly = false;
+
+      function injectPricingEnhancements() {
         var headings = document.querySelectorAll('h2');
         for (var i = 0; i < headings.length; i++) {
           if (headings[i].textContent.trim() === 'Choose Your Perfect Plan') {
             var container = headings[i].parentElement;
-            // Don't inject twice
             if (container.querySelector('#free-trial-cta')) return;
             var subtitle = headings[i].nextElementSibling;
+
+            // --- "TRY IT FOR FREE" button ---
             var btn = document.createElement('a');
             btn.id = 'free-trial-cta';
             btn.href = '#contact';
-            btn.textContent = 'Try It For FREE';
-            btn.style.cssText = 'display:inline-block;margin-top:24px;padding:20px 56px;font-size:22px;font-weight:800;color:#fff;background:linear-gradient(to right,#06b6d4,#3b82f6);border-radius:9999px;text-decoration:none;letter-spacing:0.5px;box-shadow:0 4px 24px rgba(6,182,212,0.4);transition:transform 0.2s,box-shadow 0.2s;cursor:pointer;';
+            btn.textContent = 'TRY IT FOR FREE';
+            btn.style.cssText = 'display:inline-block;margin-top:24px;padding:20px 56px;font-size:22px;font-weight:800;color:#fff;background:linear-gradient(to right,#06b6d4,#3b82f6);border-radius:9999px;text-decoration:none;letter-spacing:1.5px;box-shadow:0 4px 24px rgba(6,182,212,0.4);transition:transform 0.2s,box-shadow 0.2s;cursor:pointer;text-transform:uppercase;';
             btn.onmouseenter = function() { this.style.transform='scale(1.05)'; this.style.boxShadow='0 6px 32px rgba(6,182,212,0.6)'; };
             btn.onmouseleave = function() { this.style.transform='scale(1)'; this.style.boxShadow='0 4px 24px rgba(6,182,212,0.4)'; };
+
+            // --- Monthly/Yearly toggle ---
+            var toggleWrap = document.createElement('div');
+            toggleWrap.id = 'pricing-toggle';
+            toggleWrap.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:14px;margin-top:28px;';
+
+            var lblMonth = document.createElement('span');
+            lblMonth.id = 'lbl-monthly';
+            lblMonth.textContent = 'Monthly';
+            lblMonth.style.cssText = 'font-size:16px;font-weight:700;color:#fff;transition:color 0.3s;cursor:pointer;';
+
+            var toggleContainer = document.createElement('div');
+            toggleContainer.style.cssText = 'width:56px;height:30px;background:#334155;border-radius:9999px;position:relative;cursor:pointer;transition:background 0.3s;';
+
+            var toggleKnob = document.createElement('div');
+            toggleKnob.id = 'toggle-knob';
+            toggleKnob.style.cssText = 'width:24px;height:24px;background:#fff;border-radius:50%;position:absolute;top:3px;left:3px;transition:left 0.3s,background 0.3s;';
+            toggleContainer.appendChild(toggleKnob);
+
+            var lblYear = document.createElement('span');
+            lblYear.id = 'lbl-yearly';
+            lblYear.textContent = 'Yearly';
+            lblYear.style.cssText = 'font-size:16px;font-weight:700;color:rgba(255,255,255,0.5);transition:color 0.3s;cursor:pointer;';
+
+            var saveBadge = document.createElement('span');
+            saveBadge.textContent = 'SAVE 15%';
+            saveBadge.style.cssText = 'font-size:12px;font-weight:800;color:#fff;background:linear-gradient(to right,#06b6d4,#3b82f6);padding:4px 12px;border-radius:9999px;letter-spacing:0.5px;';
+
+            toggleWrap.appendChild(lblMonth);
+            toggleWrap.appendChild(toggleContainer);
+            toggleWrap.appendChild(lblYear);
+            toggleWrap.appendChild(saveBadge);
+
+            // Insert after subtitle
             if (subtitle) {
               subtitle.parentElement.insertBefore(btn, subtitle.nextSibling);
+              subtitle.parentElement.insertBefore(toggleWrap, btn.nextSibling);
             } else {
               container.appendChild(btn);
+              container.appendChild(toggleWrap);
             }
+
+            // Toggle click handler
+            function togglePricing() {
+              isYearly = !isYearly;
+              updatePrices();
+            }
+            toggleContainer.onclick = togglePricing;
+            lblMonth.onclick = function() { if (isYearly) togglePricing(); };
+            lblYear.onclick = function() { if (!isYearly) togglePricing(); };
+
             return;
           }
         }
       }
-      // Wait for React to render, then inject
+
+      function updatePrices() {
+        var knob = document.getElementById('toggle-knob');
+        var lblM = document.getElementById('lbl-monthly');
+        var lblY = document.getElementById('lbl-yearly');
+        if (!knob) return;
+
+        // Update toggle visual
+        if (isYearly) {
+          knob.style.left = '29px';
+          knob.parentElement.style.background = 'linear-gradient(to right,#06b6d4,#3b82f6)';
+          lblM.style.color = 'rgba(255,255,255,0.5)';
+          lblY.style.color = '#fff';
+        } else {
+          knob.style.left = '3px';
+          knob.parentElement.style.background = '#334155';
+          lblM.style.color = '#fff';
+          lblY.style.color = 'rgba(255,255,255,0.5)';
+        }
+
+        // Update price numbers
+        var priceSpans = document.querySelectorAll('span.text-5xl.font-extrabold.text-white');
+        var periodSpans = document.querySelectorAll('span.text-lg');
+        for (var i = 0; i < priceSpans.length && i < plans.length; i++) {
+          var price = isYearly ? plans[i].yearly : plans[i].monthly;
+          priceSpans[i].textContent = '$' + price;
+          // Find the /month or /year sibling
+          var periodEl = priceSpans[i].nextElementSibling;
+          if (periodEl && periodEl.classList.contains('text-lg')) {
+            periodEl.textContent = isYearly ? '/month' : '/month';
+          }
+        }
+
+        // Add/remove "billed yearly" note and strikethrough
+        for (var j = 0; j < priceSpans.length && j < plans.length; j++) {
+          var priceContainer = priceSpans[j].parentElement;
+          var existingNote = priceContainer.querySelector('.yearly-note');
+          var existingStrike = priceContainer.querySelector('.strike-price');
+
+          if (isYearly) {
+            // Add strikethrough of original price
+            if (!existingStrike) {
+              var strike = document.createElement('div');
+              strike.className = 'strike-price';
+              strike.style.cssText = 'font-size:16px;color:rgba(255,255,255,0.4);text-decoration:line-through;margin-bottom:4px;';
+              strike.textContent = '$' + plans[j].monthly + '/mo';
+              priceContainer.insertBefore(strike, priceContainer.firstChild);
+            }
+            // Add "billed yearly" note
+            if (!existingNote) {
+              var note = document.createElement('div');
+              note.className = 'yearly-note';
+              note.style.cssText = 'font-size:13px;color:#06b6d4;font-weight:600;margin-top:4px;';
+              note.textContent = 'billed annually ($' + (plans[j].yearly * 12) + '/yr)';
+              priceContainer.appendChild(note);
+            }
+          } else {
+            if (existingStrike) existingStrike.remove();
+            if (existingNote) existingNote.remove();
+          }
+        }
+      }
+
+      // Wait for React to render
       var observer = new MutationObserver(function() {
-        injectFreeTrialButton();
+        injectPricingEnhancements();
       });
       observer.observe(document.getElementById('root'), { childList: true, subtree: true });
-      // Also try on DOMContentLoaded and after a delay
-      document.addEventListener('DOMContentLoaded', function() { setTimeout(injectFreeTrialButton, 500); });
-      window.addEventListener('load', function() { setTimeout(injectFreeTrialButton, 1000); });
+      document.addEventListener('DOMContentLoaded', function() { setTimeout(injectPricingEnhancements, 500); });
+      window.addEventListener('load', function() { setTimeout(injectPricingEnhancements, 1000); });
     })();
     </script>
 </body>
