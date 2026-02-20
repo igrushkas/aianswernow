@@ -21,6 +21,25 @@
             "value": "no-cache, must-revalidate"
           }
         ]
+      },
+      {
+        "source": "verify.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "/verify",
+        "destination": "/verify.html"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
       }
     ]
   }

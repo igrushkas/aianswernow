@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirm Your Demo Request - AI Answer Now</title>
+    <script src="https://www.gstatic.com/firebasejs/11.3.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.3.0/firebase-firestore-compat.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        background: #0f172a;
+        color: #fff;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .container {
+        background: #1e293b;
+        border-radius: 20px;
+        padding: 48px;
+        max-width: 520px;
+        width: 90%;
+        text-align: center;
+        box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+        border: 1px solid rgba(6,182,212,0.3);
+      }
+      .icon { font-size: 64px; margin-bottom: 20px; }
+      h1 { font-size: 28px; font-weight: 800; margin-bottom: 16px; }
+      p { color: rgba(255,255,255,0.7); font-size: 16px; line-height: 1.6; margin-bottom: 16px; }
+      .highlight { color: #06b6d4; font-weight: 700; }
+      .btn {
+        display: inline-block;
+        padding: 16px 48px;
+        font-size: 16px;
+        font-weight: 700;
+        color: #fff;
+        background: linear-gradient(to right, #06b6d4, #3b82f6);
+        border: none;
+        border-radius: 9999px;
+        cursor: pointer;
+        text-decoration: none;
+        margin-top: 24px;
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+      .btn:hover { transform: scale(1.05); box-shadow: 0 6px 32px rgba(6,182,212,0.6); }
+      .spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid rgba(255,255,255,0.3); border-top-color: #06b6d4; border-radius: 50%; animation: spin 0.8s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .error { color: #f87171; }
+      .success { color: #34d399; }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container" id="main">
+      <div class="icon"><div class="spinner"></div></div>
+      <h1>Verifying...</h1>
+      <p>Please wait while we confirm your email.</p>
+    </div>
+
+    <script>
+    (function() {
+      var FORMSUBMIT_HASH = '9571eb5fe1f34a8362a41f1668ba7284';
+      // HubSpot Private App token — will be set after user provides it
+      var HUBSPOT_TOKEN = '__HUBSPOT_TOKEN__';
+
+      var container = document.getElementById('main');
+
+      // Get token from URL
+      var params = new URLSearchParams(window.location.search);
+      var token = params.get('token');
+
+      if (!token) {
+        showError('Invalid verification link. No token provided.');
+        return;
+      }
+
+      // Initialize Firebase
+      var app = firebase.initializeApp({
+        apiKey: "AIzaSyAJ8hLasKT3rGTcvMF0999nWZ_wRsbzWt4",
+        authDomain: "aianswernow-3c345.firebaseapp.com",
+        projectId: "aianswernow-3c345",
+        storageBucket: "aianswernow-3c345.firebasestorage.app",
+        messagingSenderId: "441518559053",
+        appId: "1:441518559053:web:1e2bc62517d77b9d53b104"
+      });
+      var db = firebase.firestore();
+
+      // Find and verify the document
+      db.collection('demo_requests')
+        .where('verification_token', '==', token)
+        .where('status', '==', 'pending_verification')
+        .limit(1)
+        .get()
+        .then(function(snapshot) {
+          if (snapshot.empty) {
+            // Check if already confirmed
+            return db.collection('demo_requests')
+              .where('verification_token', '==', token)
+              .where('status', '==', 'confirmed')
+              .limit(1)
+              .get()
+              .then(function(confirmedSnap) {
+                if (!confirmedSnap.empty) {
+                  showAlreadyConfirmed();
+                } else {
+                  showError('This verification link is invalid or has expired.');
+                }
+              });
+          }
+
+          var doc = snapshot.docs[0];
+          var data = doc.data();
+
+          // Check expiration
+          if (data.expires_at && new Date(data.expires_at) < new Date()) {
+            showError('This verification link has expired. Please submit a new demo request.');
+            return;
+          }
+
+          // Update status to confirmed
+          return doc.ref.update({
+            status: 'confirmed',
+            confirmed_at: firebase.firestore.FieldValue.serverTimestamp()
+          }).then(function() {
+            console.log('[Verify] Email confirmed for:', data.email);
+
+            // Send owner notification email
+            sendOwnerNotification(data);
+
+            // Create HubSpot contact + deal
+            if (HUBSPOT_TOKEN && HUBSPOT_TOKEN !== '__HUBSPOT_TOKEN__') {
+              createHubSpotContact(data);
+            }
+
+            showSuccess(data.contact_name || data.business_name || '');
+          });
+        })
+        .catch(function(e) {
+          console.error('[Verify] Error:', e);
+          showError('Something went wrong. Please try again or contact support.');
+        });
+
+      function sendOwnerNotification(d) {
+        var emailData = new FormData();
+        emailData.append('email', FORMSUBMIT_HASH);
+        emailData.append('_subject', 'CONFIRMED Demo Request: ' + (d.business_name || 'Unknown'));
+        emailData.append('_template', 'table');
+        emailData.append('_captcha', 'false');
+        emailData.append('Business Name', d.business_name || '');
+        emailData.append('Contact Name', d.contact_name || '');
+        emailData.append('Email', d.email || '');
+        emailData.append('Phone', d.phone || '');
+        emailData.append('Owner/Decision Maker', d.is_owner || '');
+        emailData.append('Voice Preference', d.voice_preference || '');
+        emailData.append('Industry', d.industry || '');
+        emailData.append('Status', 'EMAIL VERIFIED');
+        fetch('https://formsubmit.co/ajax/' + FORMSUBMIT_HASH, {
+          method: 'POST',
+          body: emailData
+        }).then(function(r) {
+          console.log('[Verify] Owner notification sent, status:', r.status);
+        }).catch(function(e) {
+          console.error('[Verify] Owner notification failed:', e.message);
+        });
+      }
+
+      function createHubSpotContact(d) {
+        // Create contact
+        fetch('https://api.hubapi.com/crm/v3/objects/contacts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + HUBSPOT_TOKEN
+          },
+          body: JSON.stringify({
+            properties: {
+              email: d.email || '',
+              firstname: d.contact_name || '',
+              phone: d.phone || '',
+              company: d.business_name || '',
+              industry: d.industry || '',
+              hs_lead_status: 'NEW'
+            }
+          })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(contact) {
+          console.log('[HubSpot] Contact created:', contact.id);
+          // Create deal and associate with contact
+          return fetch('https://api.hubapi.com/crm/v3/objects/deals', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + HUBSPOT_TOKEN
+            },
+            body: JSON.stringify({
+              properties: {
+                dealname: (d.business_name || 'Unknown') + ' - Free Demo',
+                dealstage: 'appointmentscheduled',
+                pipeline: 'default',
+                description: 'Voice: ' + (d.voice_preference || 'N/A') + ' | Owner: ' + (d.is_owner || 'N/A') + ' | Industry: ' + (d.industry || 'N/A')
+              },
+              associations: [{
+                to: { id: contact.id },
+                types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 3 }]
+              }]
+            })
+          });
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(deal) {
+          console.log('[HubSpot] Deal created:', deal.id);
+        })
+        .catch(function(e) {
+          console.error('[HubSpot] Error:', e.message);
+        });
+      }
+
+      function showSuccess(name) {
+        container.innerHTML =
+          '<div class="icon">&#10003;</div>' +
+          '<h1 class="success">Email Confirmed!</h1>' +
+          '<p>Thank you' + (name ? ', <span class="highlight">' + name + '</span>' : '') + '! Your demo request has been confirmed.</p>' +
+          '<p>Our team will reach out to you shortly to set up your personalized AI answering service demo.</p>' +
+          '<a href="https://aianswernow.com" class="btn">Back to Home</a>';
+        container.querySelector('.icon').style.cssText = 'font-size:64px;margin-bottom:20px;color:#34d399;';
+      }
+
+      function showAlreadyConfirmed() {
+        container.innerHTML =
+          '<div class="icon">&#10003;</div>' +
+          '<h1 class="highlight">Already Confirmed</h1>' +
+          '<p>Your email has already been verified. Our team will be in touch soon!</p>' +
+          '<a href="https://aianswernow.com" class="btn">Back to Home</a>';
+        container.querySelector('.icon').style.cssText = 'font-size:64px;margin-bottom:20px;color:#06b6d4;';
+      }
+
+      function showError(msg) {
+        container.innerHTML =
+          '<div class="icon">&#9888;</div>' +
+          '<h1 class="error">Verification Failed</h1>' +
+          '<p>' + msg + '</p>' +
+          '<a href="https://aianswernow.com" class="btn">Back to Home</a>';
+        container.querySelector('.icon').style.cssText = 'font-size:64px;margin-bottom:20px;color:#f87171;';
+      }
+    })();
+    </script>
+</body>
+</html>

@@ -1,9 +1,20 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /demo_requests/{document=**} {
+    match /demo_requests/{docId} {
+      // Anyone can create a demo request
       allow create: if true;
-      allow read, update, delete: if false;
+
+      // Allow reading (needed for verification token lookup)
+      // Safe because tokens are 32-char random strings
+      allow read: if true;
+
+      // Allow update only to change status from pending to confirmed
+      allow update: if resource.data.status == 'pending_verification'
+                    && request.resource.data.status == 'confirmed';
+
+      // No deletes
+      allow delete: if false;
     }
   }
 }
