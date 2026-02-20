@@ -5,47 +5,65 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Answering Service 24/7 | Human-Like Voice</title>
-    <!-- STEP 1: Synchronous fetch intercept — MUST run before any modules load -->
+    <!-- Firebase SDK (compat version — non-module, loads synchronously) -->
+    <script src="https://www.gstatic.com/firebasejs/11.3.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.3.0/firebase-firestore-compat.js"></script>
+    <!-- Firebase DB wrapper — replaces Supabase client with Firestore SDK -->
     <script>
     (function() {
-      var originalFetch = window.fetch;
-      window.__fbQueue = [];
-      window.__fbHandler = null;
+      // Initialize Firebase
+      var app = firebase.initializeApp({
+        apiKey: "AIzaSyAJ8hLasKT3rGTcvMF0999nWZ_wRsbzWt4",
+        authDomain: "aianswernow-3c345.firebaseapp.com",
+        projectId: "aianswernow-3c345",
+        storageBucket: "aianswernow-3c345.firebasestorage.app",
+        messagingSenderId: "441518559053",
+        appId: "1:441518559053:web:1e2bc62517d77b9d53b104"
+      });
+      var db = firebase.firestore();
 
-      window.fetch = function(url, options) {
-        var urlStr = typeof url === 'string' ? url : (url && url.url) || '';
-
-        // Intercept Supabase REST API calls (form submissions, heartbeats, etc.)
-        if (urlStr.indexOf('supabase.co/rest/v1/') !== -1) {
-          console.log('[Firebase] Intercepting Supabase REST call:', urlStr);
-          if (window.__fbHandler) {
-            return window.__fbHandler(url, options);
+      // Supabase-compatible wrapper that writes to Firestore via SDK
+      window.__firebaseDB = {
+        from: function(table) {
+          return {
+            insert: function(rows) {
+              return {
+                select: function() {
+                  var row = Array.isArray(rows) ? rows[0] : rows;
+                  console.log('[Firebase] Writing to Firestore:', table, row);
+                  return db.collection(table).add(Object.assign({}, row, {
+                    created_at: firebase.firestore.FieldValue.serverTimestamp()
+                  }))
+                  .then(function(docRef) {
+                    console.log('[Firebase] Saved to Firestore, doc ID:', docRef.id);
+                    return { data: [Object.assign({ id: docRef.id }, row)], error: null };
+                  })
+                  .catch(function(e) {
+                    console.error('[Firebase] Write failed:', e.message);
+                    return { data: null, error: { message: e.message } };
+                  });
+                }
+              };
+            },
+            select: function() {
+              // Heartbeat / read calls — return empty success
+              return Promise.resolve({ data: [], error: null });
+            }
+          };
+        },
+        functions: {
+          invoke: function(name, opts) {
+            console.log('[Firebase] Edge function call (no-op):', name);
+            return Promise.resolve({ data: { success: true }, error: null });
           }
-          // Firebase not ready yet — queue the request
-          return new Promise(function(resolve, reject) {
-            window.__fbQueue.push({ url: url, options: options, resolve: resolve, reject: reject });
-          });
         }
-
-        // Intercept Supabase Edge Function calls (email notifications)
-        if (urlStr.indexOf('supabase.co/functions/v1/') !== -1) {
-          console.log('[Firebase] Intercepting Supabase Edge Function (no-op)');
-          return Promise.resolve(new Response(JSON.stringify({ success: true }), {
-            status: 200, headers: { 'Content-Type': 'application/json' }
-          }));
-        }
-
-        // All other requests pass through unchanged
-        return originalFetch.apply(this, arguments);
       };
 
-      console.log('[Firebase] Fetch intercept installed (sync)');
+      console.log('[Firebase] Firestore SDK wrapper ready');
     })();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@vapi-ai/web@latest"></script>
-    <!-- STEP 2: Firebase handler — loads async, processes queued requests -->
-    <script type="module" src="/firebase-shim.js"></script>
-    <!-- Original app bundle (unchanged) -->
+    <!-- Original app bundle (modified: Supabase client replaced with window.__firebaseDB) -->
     <script type="module" crossorigin src="/assets/index-49919655.js"></script>
     <link rel="stylesheet" href="/assets/index-0a0d79a8.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
